@@ -25,17 +25,48 @@ from escalating into real damage.
 
 ## Setup
 
-You need a **FortSignal API key** and either an **agent registration** or a
-**user registration** on FortSignal.
+You need three things from the **FortSignal dashboard** (https://dashboard.fortsignal.com):
 
-### 1. Get credentials
+1. **API Key** — Authenticates requests to FortSignal's API
+2. **User Registration** — Required for passkey (human-in-the-loop) mode
+3. **Agent Registration** — Required for autonomous (agent) mode
 
-Sign up at [fortsignal.com](https://fortsignal.com) and get your API key.
+### 1. Get your API key
 
-### 2. Set environment variables
+1. Go to [dashboard.fortsignal.com](https://dashboard.fortsignal.com) → **Settings → API Keys**
+2. Create a new key and copy it — this is your `FORTSIGNAL_API_KEY`
+
+### 2. Get your User ID (for passkey mode)
+
+1. In the dashboard → **Users → Add User**
+2. Give it a name and ID (e.g. `"alice"`)
+3. **Register a passkey** — the dashboard will prompt you to use Face ID, Touch ID, Windows Hello, or a hardware security key
+4. The user's ID (e.g. `"user_alice"`) is your `FORTSIGNAL_USER_ID`
+
+### 3. Register an agent (for autonomous mode)
+
+1. In the dashboard → **Agents → Register Agent**
+2. Give it an ID (e.g. `"my-deep-agent"`)
+3. Download the generated **Ed25519 agent key file** (JSON) — this is your `FORTSIGNAL_AGENT_KEY`
+4. The agent's ID (e.g. `"agent_abc123"`) is your `FORTSIGNAL_AGENT_ID`
+5. **Create a policy** for this agent — define which actions (`write_file`, `execute`, etc.) and which recipients (paths, commands) it's allowed to sign
+6. Optionally set up **delegation approvals** if your policy requires human delegation for certain actions
+
+### 4. Set environment variables
 
 ```bash
+# Always required:
 export FORTSIGNAL_API_KEY="fs_live_..."
+
+# For agent mode (autonomous signing):
+export FORTSIGNAL_AGENT_ID="agent_abc123"
+export FORTSIGNAL_AGENT_KEY="/path/to/agent-key.json"
+
+# OR for passkey mode (human-in-the-loop):
+export FORTSIGNAL_USER_ID="user_alice"
+
+# Your LLM provider key (e.g. OpenAI) is separate:
+export OPENAI_API_KEY="sk-..."
 ```
 
 ---
