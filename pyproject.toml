@@ -1,6 +1,6 @@
 [project]
 name = "fortsignal-deepagents"
-version = "0.1.0"
+version = "0.1.2"
 description = "FortSignal-secured Deep Agents — cryptographically safe coding agent"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -22,6 +22,7 @@ classifiers = [
 dependencies = [
     "deepagents>=0.5.0",
     "httpx",              # HTTP client for FortSignal API
+    "langchain-deepseek>=1.0.1",
     "langchain-openai>=1.2.1",
 ]
 
