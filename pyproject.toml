@@ -1,0 +1,42 @@
+[project]
+name = "fortsignal-deepagents"
+version = "0.1.0"
+description = "FortSignal-secured Deep Agents — cryptographically safe coding agent"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "FortSignal", email = "hello@fortsignal.com"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: Software Development :: Build Tools",
+]
+dependencies = [
+    "deepagents>=0.5.0",
+    "httpx",              # HTTP client for FortSignal API
+    "langchain-openai>=1.2.1",
+]
+
+[project.scripts]
+fortsignal-deepagents = "fortsignal_deepagents.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio>=1.4.0a2",
+    "ruff",
+]
+
+[tool.uv]
+prerelease = "allow"
+
+[tool.hatch.build]
+include = ["fortsignal_deepagents/"]

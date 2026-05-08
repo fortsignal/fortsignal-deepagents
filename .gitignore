@@ -1,0 +1,29 @@
+# Secrets / local config
+.agent_key.json
+.env
+*.key
+*.pem
+credentials.json
+
+# Private dev files
+.private/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing artifacts
+.tmp/
