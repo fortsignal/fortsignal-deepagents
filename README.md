@@ -110,15 +110,38 @@ Risky tool calls are automatically signed — no user interruption.
 
 ### Passkey mode (human-in-the-loop)
 
-For interactive use where a human signs each challenge with WebAuthn.
+For interactive use where a **human** must approve each risky tool call with
+a WebAuthn passkey (Face ID, Touch ID, Windows Hello, hardware security key).
 
 ```bash
 export FORTSIGNAL_USER_ID="my-user-id"
 fortsignal-deepagents --model "openai:gpt-4o"
 ```
 
-When the agent calls a risky tool, the CLI returns WebAuthn options. Sign
-in your browser, paste the assertion back, and the tool executes if verified.
+**What happens when a risky tool is called:**
+
+1. The middleware intercepts the call and creates a challenge with FortSignal
+2. Instead of auto-signing, it tells the agent to pause and wait for approval
+3. The agent displays a message in the TUI like:
+
+   ```
+   ⚠️ FortSignal requires approval for `write_file` on `/etc/passwd`.
+   Sign the challenge with your passkey, then paste the WebAuthn
+   assertion JSON into the prompt.
+   ```
+
+4. **Sign the challenge** — use a browser-based WebAuthn tool
+   (e.g. visit [webauthn.io](https://webauthn.io) or a custom dashboard)
+   to authenticate with your registered passkey
+5. **Paste the result** — copy the `AuthenticationResponseJSON` and paste
+   it into the agent prompt. The agent re-submits the tool call with
+   `_fortsignal_assertion` in the args
+6. The middleware sends the assertion to FortSignal's `/challenge/verify`.
+   If `"decision": "allow"` — the tool executes. If denied, the tool is
+   blocked with an error message
+
+**Note:** Agent mode (autonomous signing) is simpler for automated workflows.
+Passkey mode requires the user to be present and responsive at the terminal.
 
 ### One-shot prompt
 
