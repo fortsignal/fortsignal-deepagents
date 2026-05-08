@@ -8,9 +8,27 @@ your machine.
 
 ```bash
 pip install fortsignal-deepagents
-export FORTSIGNAL_API_KEY="fs_live_..."
-fortsignal-deepagents
 ```
+
+## Quick Start
+
+**1. Get credentials** — sign up at [dashboard.fortsignal.com](https://dashboard.fortsignal.com)
+   - Go to **Settings → API Keys**, create a key → `FORTSIGNAL_API_KEY`
+   - Go to **Agents → Register Agent**, download the key file → `FORTSIGNAL_AGENT_KEY`
+   - Note the agent ID → `FORTSIGNAL_AGENT_ID`
+   - Go to **Policies**, create one with `allowedActions: ["write_file", "edit_file"]`
+
+**2. Run**
+
+```bash
+export FORTSIGNAL_API_KEY="fs_live_..."
+export FORTSIGNAL_AGENT_ID="my-agent"
+export FORTSIGNAL_AGENT_KEY="/path/to/agent-key.json"
+export DEEPSEEK_API_KEY="sk-..."  # or OPENAI_API_KEY, etc.
+fortsignal-deepagents --model "deepseek:deepseek-chat"
+```
+
+Every tool call is now cryptographically verified by FortSignal.
 
 ---
 
