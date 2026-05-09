@@ -12,7 +12,7 @@ pip install fortsignal-deepagents
 
 ## Quick Start
 
-**1. Get credentials** — sign up at [dashboard.fortsignal.com](https://dashboard.fortsignal.com)
+**1. Get credentials** — sign up at [fortsignal.com/signup](https://fortsignal.com/signup)
    - Go to **Settings → API Keys**, create a key → `FORTSIGNAL_API_KEY`
    - Go to **Agents → Register Agent**, download the key file → `FORTSIGNAL_AGENT_KEY`
    - Note the agent ID → `FORTSIGNAL_AGENT_ID`
@@ -43,15 +43,20 @@ from escalating into real damage.
 
 ## Setup
 
-You need three things from the **FortSignal dashboard** (https://dashboard.fortsignal.com):
+You need three things from the **FortSignal dashboard** (sign up first, then log in):
 
 1. **API Key** — Authenticates requests to FortSignal's API
 2. **User Registration** — Required for passkey (human-in-the-loop) mode
 3. **Agent Registration** — Required for autonomous (agent) mode
 
+### 0. Sign up
+
+1. Go to [fortsignal.com/signup](https://fortsignal.com/signup), choose a plan, and create your account
+2. After signing up, log in at [fortsignal.com/login](https://fortsignal.com/login)
+
 ### 1. Get your API key
 
-1. Go to [dashboard.fortsignal.com](https://dashboard.fortsignal.com) → **Settings → API Keys**
+1. In the dashboard → **Settings → API Keys**
 2. Create a new key and copy it — this is your `FORTSIGNAL_API_KEY`
 
 ### 2. Get your User ID (for passkey mode)

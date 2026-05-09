@@ -1,6 +1,6 @@
 [project]
 name = "fortsignal-deepagents"
-version = "0.1.2"
+version = "0.1.4"
 description = "FortSignal-secured Deep Agents — cryptographically safe coding agent"
 readme = "README.md"
 requires-python = ">=3.11"
