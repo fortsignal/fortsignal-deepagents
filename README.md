@@ -14,7 +14,7 @@ pip install fortsignal-deepagents
 
 **1. Get credentials** — sign up at [fortsignal.com/signup](https://fortsignal.com/signup)
    - Go to **Settings → API Keys**, create a key → `FORTSIGNAL_API_KEY`
-   - Go to **Agents → Register Agent**, download the key file → `FORTSIGNAL_AGENT_KEY`
+   - Go to **Agent Passports → + New Agent Passport**, download the key file → `FORTSIGNAL_AGENT_KEY`
    - Note the agent ID → `FORTSIGNAL_AGENT_ID`
    - Go to **Policies**, create one with `allowedActions: ["write_file", "edit_file"]`
 
@@ -66,14 +66,14 @@ You need three things from the **FortSignal dashboard** (sign up first, then log
 3. **Register a passkey** — the dashboard will prompt you to use Face ID, Touch ID, Windows Hello, or a hardware security key
 4. The user's ID (e.g. `"user_alice"`) is your `FORTSIGNAL_USER_ID`
 
-### 3. Register an agent (for autonomous mode)
+### 3. Create an Agent Passport (for autonomous mode)
 
-1. In the dashboard → **Agents → Register Agent**
-2. Give it an ID (e.g. `"my-deep-agent"`)
-3. Download the generated **Ed25519 agent key file** (JSON) — this is your `FORTSIGNAL_AGENT_KEY`
-4. The agent's ID (e.g. `"agent_abc123"`) is your `FORTSIGNAL_AGENT_ID`
-5. **Create a policy** for this agent — define which actions (`write_file`, `execute`, etc.) and which recipients (paths, commands) it's allowed to sign
-6. Optionally set up **delegation approvals** if your policy requires human delegation for certain actions
+1. In the dashboard → **Agent Passports** → **+ New Agent Passport**
+2. Enter a unique agent ID (e.g. `"my-deep-agent"`)
+3. The dashboard generates an Ed25519 keypair in your browser — download the **agent key file** (JSON) → this is your `FORTSIGNAL_AGENT_KEY`
+4. The agent ID you chose (e.g. `"my-deep-agent"`) is your `FORTSIGNAL_AGENT_ID`
+5. After creation, activate the agent by assigning a **policy** — define which actions (`write_file`, `execute`, etc.) it's allowed to sign and for how long
+6. Approve the delegation with your passkey — the agent is now live
 
 ### 4. Set environment variables
 
@@ -102,8 +102,9 @@ Two modes depending on your workflow.
 
 For automated agents that sign challenges with an Ed25519 key.
 
-1. Register your agent on the FortSignal dashboard and download its key file
-2. Run:
+1. In your [FortSignal dashboard](https://fortsignal.com/dashboard), open **Agent Passports** → **+ New Agent Passport**, enter an agent ID, and download the generated key file
+2. Approve a delegation (assign a policy + expiry) with your passkey in the same flow
+3. Run:
 
 ```bash
 export FORTSIGNAL_AGENT_ID="my-agent-id"
