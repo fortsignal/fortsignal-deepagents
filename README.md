@@ -1,6 +1,5 @@
 # FortSignal DeepAgents
 
-![FortSignal Logo](https://raw.githubusercontent.com/fortsignal/fortsignal-deepagents/main/fortsignal-logo.png)
 
 **Run any Deep Agent with cryptographic tool‑call protection powered by FortSignal.**
 
