@@ -118,6 +118,3 @@ Made with ❤️ by the FortSignal team
 fortsignal.com · Dashboard
 
 
-
-
-Want me to do the same for the SDK repo too, or make any tweaks first?
