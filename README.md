@@ -115,6 +115,8 @@ Tests
 uv run pytest tests/ -v
 
 Made with ❤️ by the FortSignal team
-fortsignal.com · Dashboard
+fortsignal.com
+
+Dev docs: https://fortsignal.com/docs
 
 
