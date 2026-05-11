@@ -118,13 +118,6 @@ Made with ❤️ by the FortSignal team
 fortsignal.com · Dashboard
 
 
----
 
-**Next step:**  
-1. Paste the whole thing above into `README.md` (replace everything).  
-2. Upload your FortSignal logo as `fortsignal-logo.png` in the root.  
-3. Hard refresh the page (`Ctrl + Shift + R`).
-
-This keeps **100%** of your original content while making it look clean and professional.
 
 Want me to do the same for the SDK repo too, or make any tweaks first?
