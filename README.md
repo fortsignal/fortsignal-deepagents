@@ -21,7 +21,7 @@ We’re running a small, high-touch pilot for teams building real agents.
 - Cryptographically enforced agent behavior
 - Full audit + compliance visibility
 
-👉 **[Read the full Client Guide (PDF)](https://fortsignal.com/docs/client-guide.pdf)**  
+👉 👉 **[Read the full Client Guide (PDF)](https://fortsignal.com/docs/client-guide.pdf)**
 Interested? Comment **“PILOT”** on any post, open an issue, or DM us.
 
 ---
