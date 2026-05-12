@@ -9,6 +9,21 @@ Every risky operation (file write, edit, execute, sub-task) is intercepted and r
 [![PyPI](https://img.shields.io/badge/PyPI-latest-orange)](https://pypi.org/project/fortsignal-deepagents/)
 
 ---
+---
+
+## 📢 FortSignal Verifiable Intent Pilot – Now Open
+
+We’re running a small, high-touch pilot for teams building real agents.
+
+**Perfect if you want to test:**
+- Natural Language Policies (plain-English rules)
+- Cryptographically enforced agent behavior
+- Full audit + compliance visibility
+
+👉 **[Read the full Client Guide (PDF)](https://fortsignal.com/docs/client-guide.pdf)**  
+Interested? Comment **“PILOT”** on any post, open an issue, or DM us.
+
+---
 
 ## Quick Start
 
