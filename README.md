@@ -33,12 +33,15 @@ pip install fortsignal-deepagents
 ```
 
 ```bash
-# 1. Set your credentials
+# 1. Set your credentials (from FortSignal dashboard)
 export FORTSIGNAL_API_KEY="fs_live_..."
-export FORTSIGNAL_AGENT_ID="your-agent-id"          # for autonomous mode
-# or
-export FORTSIGNAL_USER_ID="user_..."                # for passkey/human mode
-```
+
+# Autonomous agent mode (recommended)
+export FORTSIGNAL_AGENT_ID="your-agent-id"
+export FORTSIGNAL_AGENT_KEY="/path/to/agent-key.json"
+
+# OR passkey / human mode
+# export FORTSIGNAL_USER_ID="user_..."
 
 **Run your agent**
 ```bash
