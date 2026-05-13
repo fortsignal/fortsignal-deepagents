@@ -1,6 +1,6 @@
 # FortSignal DeepAgents
 
-**Run any Deep Agent with cryptographic tool-call protection powered by FortSignal.**
+**Deep Agents with FortSignal enforcement — every risky tool call cryptographically authorized before execution.**
 
 Every risky operation (file write, edit, execute, sub-task) is intercepted and routed through FortSignal's challenge/verify flow — only cryptographically signed intents reach your machine.
 
