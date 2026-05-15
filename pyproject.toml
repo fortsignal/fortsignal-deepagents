@@ -21,6 +21,7 @@ classifiers = [
 ]
 dependencies = [
     "deepagents>=0.6.0",
+    "deepagents-cli>=0.0.51",
     "httpx",              # HTTP client for FortSignal API
     "langchain-deepseek>=1.0.1",
     "langchain-openai>=1.2.1",
