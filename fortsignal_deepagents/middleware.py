@@ -49,6 +49,7 @@ RISKY_TOOLS = frozenset({
     "execute",
     "task",
     "write_todos",
+    "eval",  # CodeInterpreterMiddleware (langchain-quickjs) — JS REPL, deepagents v0.6+
 })
 
 # How long to wait for the user to submit a signed challenge (seconds).
