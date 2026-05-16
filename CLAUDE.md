@@ -28,11 +28,6 @@ git push
 # STOP. Do not bump version or publish.
 ```
 
-## Pending as of May 15, 2026
-- `0.1.6` is built and ready in `dist/` but NOT yet published to PyPI (PyPI token required — run twine upload manually)
-- Tags `v0.1.5` and `v0.1.6` exist locally but NOT yet pushed to GitHub — run `git push origin v0.1.5 v0.1.6`
-- PyPI latest is currently `0.1.5`
-
 ## Versioning
 - Version lives in `pyproject.toml` under `[project] version`
 - Every PyPI publish must have a corresponding git tag
