@@ -168,6 +168,7 @@ class FortSignalMiddleware(AgentMiddleware):
         FORTSIGNAL_AGENT_ID    : str  (for agent mode)
         FORTSIGNAL_AGENT_KEY   : str  (path to JSON file with privateKey)
         FORTSIGNAL_USER_ID     : str  (for passkey mode)
+        FORTSIGNAL_SOURCE      : str  (optional — source context, e.g. "production-cluster")
         FORTSIGNAL_LOG_LEVEL   : str  (default: "WARNING")
     """
 
@@ -178,6 +179,7 @@ class FortSignalMiddleware(AgentMiddleware):
         base_url: str | None = None,
         agent_id: str | None = None,
         agent_key_path: str | None = None,
+        source: str | None = None,
         http_client: AsyncClient | None = None,
     ) -> None:
         self.api_key = api_key or os.getenv("FORTSIGNAL_API_KEY", "")
@@ -187,6 +189,7 @@ class FortSignalMiddleware(AgentMiddleware):
         self.user_id = user_id or os.getenv("FORTSIGNAL_USER_ID", "")
         self.agent_id = agent_id or os.getenv("FORTSIGNAL_AGENT_ID", "")
         self.agent_key_path = agent_key_path or os.getenv("FORTSIGNAL_AGENT_KEY", "")
+        self.source = source or os.getenv("FORTSIGNAL_SOURCE", "")
         self._client = http_client
         self._signing_key = None  # lazy-loaded Ed25519 private key
 
@@ -301,6 +304,7 @@ class FortSignalMiddleware(AgentMiddleware):
                 "tool_call_id": tool_call_id,
                 "args": tool_args,
             },
+            **({"source": self.source} if self.source else {}),
         }
         if use_agent:
             challenge_payload["agentId"] = self.agent_id
