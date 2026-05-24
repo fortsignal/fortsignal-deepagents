@@ -101,9 +101,16 @@ def main() -> None:
     # ── Patch create_deep_agent before deepagents CLI loads ──────────────
     from fortsignal_deepagents import FortSignalMiddleware
 
-    # We monkey-patch at the deepagents module level so the CLI's own
-    # imports of create_deep_agent pick up our secured version.
+    # We monkey-patch at TWO levels so the CLI picks it up regardless of
+    # which import path resolves at runtime:
+    #   1. deepagents.graph          — canonical definition
+    #   2. deepagents                — re-exported in __init__.py
+    #
+    # Both are separate module-level references bound at import time, so
+    # patching one does NOT affect the other.
+
     import deepagents.graph as _graph_mod
+    import deepagents as _deepagents_mod
 
     _orig_create = _graph_mod.create_deep_agent
 
@@ -118,6 +125,7 @@ def main() -> None:
         return _orig_create(*p_args, middleware=middleware, **p_kwargs)
 
     _graph_mod.create_deep_agent = _secured_create
+    _deepagents_mod.create_deep_agent = _secured_create
 
     # ── Delegate to deepagents CLI ───────────────────────────────────────
     # The deepagents CLI uses runpy or direct invocation. We simply import

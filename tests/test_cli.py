@@ -2,9 +2,51 @@
 
 from __future__ import annotations
 
-from pytest import MonkeyPatch
+from unittest.mock import ANY
 
+from pytest import MonkeyPatch
+from fortsignal_deepagents import FortSignalMiddleware
 from fortsignal_deepagents.cli import _build_parser
+
+
+class TestMonkeyPatch:
+    """Verifies the CLI's monkey-patch of create_deep_agent works."""
+
+    def test_patches_both_module_levels(self):
+        """The patch should be applied to both deepagents and deepagents.graph."""
+        import deepagents.graph as _graph_mod
+        import deepagents as _deepagents_mod
+
+        from fortsignal_deepagents import FortSignalMiddleware
+
+        _orig_create = _graph_mod.create_deep_agent
+        _orig_create_deepagents = _deepagents_mod.create_deep_agent
+
+        def _secured_create(*p_args, **p_kwargs):
+            middleware = list(p_kwargs.pop("middleware", ()))
+            middleware.insert(0, FortSignalMiddleware(
+                agent_id="test-agent", api_key="test-key",
+            ))
+            return _orig_create(*p_args, middleware=middleware, **p_kwargs)
+
+        _graph_mod.create_deep_agent = _secured_create
+        _deepagents_mod.create_deep_agent = _secured_create
+
+        # Verify deepagents.graph level
+        assert _graph_mod.create_deep_agent is _secured_create
+
+        # Verify deepagents (__init__ re-export) level
+        assert _deepagents_mod.create_deep_agent is _secured_create
+
+        # Verify a fresh from-deepagents import gets the patch
+        import importlib
+        from deepagents import create_deep_agent
+        assert create_deep_agent is _secured_create, \
+            "from deepagents import create_deep_agent should see the patch"
+
+        # Cleanup
+        _graph_mod.create_deep_agent = _orig_create
+        _deepagents_mod.create_deep_agent = _orig_create_deepagents
 
 
 class TestCLIArgs:
