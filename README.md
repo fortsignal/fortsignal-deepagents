@@ -162,17 +162,13 @@ Full detail → [api.fortsignal.com/docs](https://api.fortsignal.com/docs)
 
 ## Tests
 
-**81 tests** — 57 mock (middleware logic), 18 live (API integration).
+**66 tests** — all mock (middleware logic), no API key required.
 
 Mock tests run offline and cover config, safe-tool passthrough, risky-tool
 interception, challenge/verify flow (agent + passkey modes), retry logic,
 API error handling, and middleware injection.
 
 ```bash
-# Mock tests only (fast, no API key needed)
-uv run pytest tests/test_middleware.py tests/test_cli.py -v
-
-# All tests
 uv run pytest tests/ -v
 ```
 
