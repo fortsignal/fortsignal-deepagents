@@ -160,5 +160,38 @@ Full detail → [api.fortsignal.com/docs](https://api.fortsignal.com/docs)
 
 ---
 
+## Tests
+
+**81 tests** — 57 mock (middleware logic), 18 live (API integration).
+
+Mock tests run offline and cover config, safe-tool passthrough, risky-tool
+interception, challenge/verify flow (agent + passkey modes), retry logic,
+API error handling, and middleware injection.
+
+```bash
+# Mock tests only (fast, no API key needed)
+uv run pytest tests/test_middleware.py tests/test_cli.py -v
+
+# All tests
+uv run pytest tests/ -v
+```
+
+### Policy Setup
+
+After creating an Agent Passport, create a policy in the FortSignal dashboard
+to define what the agent can do. Example for a coding agent:
+
+| Setting | Value |
+|---------|-------|
+| Actions | `edit_file`, `file_write`, `execute`, `write_file`, `task`, `write_todos` |
+| Action recipients — `execute` | `cmd:git *`, `cmd:python*`, `cmd:uv *`, `cmd:pip *`, `cmd:pytest *`, `cmd:npm *`, `cmd:npx *` |
+| Action recipients — `task` | `task:*` |
+
+The `cmd:` prefix is added automatically by the middleware to `execute`
+commands so they match the per-action policy overrides. The `task:` prefix
+is added similarly for `task` descriptions.
+
+---
+
 **License**  
 MIT © FortSignal

@@ -26,6 +26,12 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+try:
+    from importlib.metadata import version as _pkg_version
+    _VERSION = _pkg_version("fortsignal-deepagents")
+except Exception:
+    _VERSION = "0.0.0"
+
 from httpx import AsyncClient, HTTPError, HTTPStatusError
 from langchain.agents.middleware.types import (
     AgentMiddleware,
@@ -47,13 +53,11 @@ RISKY_TOOLS = frozenset({
     "write_file",
     "edit_file",
     "execute",
+    "eval",    # CodeInterpreterMiddleware (langchain-quickjs) — JS REPL, deepagents v0.6+
     "task",
     "write_todos",
     "eval",  # CodeInterpreterMiddleware (langchain-quickjs) — JS REPL, deepagents v0.6+
 })
-
-# How long to wait for the user to submit a signed challenge (seconds).
-_CHALLENGE_TIMEOUT = 300  # 5 minutes to approve in browser + paste assertion
 
 # Max retries for rate-limited (429) HTTP requests.
 _MAX_RETRIES = 3
@@ -139,10 +143,16 @@ def _tool_to_recipient(tool_name: str, args: dict[str, Any]) -> str:
         return args.get("file_path", args.get("path", "unknown"))
     elif tool_name == "execute":
         cmd = args.get("command", "")
-        return cmd[:256] if cmd else "execute"
+        if cmd:
+            # Prepend cmd: prefix so recipients match per-action policy overrides
+            return ("cmd:" + cmd)[:256]
+        return "execute"
     elif tool_name == "task":
         desc = args.get("description", "")
-        return desc[:256] if desc else "sub_agent_task"
+        if desc:
+            # Prepend task: prefix so recipients match per-action policy overrides
+            return ("task:" + desc)[:256]
+        return "sub_agent_task"
     elif tool_name == "write_todos":
         return "todos"
     return tool_name
@@ -168,7 +178,7 @@ class FortSignalMiddleware(AgentMiddleware):
         FORTSIGNAL_AGENT_ID    : str  (for agent mode)
         FORTSIGNAL_AGENT_KEY   : str  (path to JSON file with privateKey)
         FORTSIGNAL_USER_ID     : str  (for passkey mode)
-        FORTSIGNAL_SOURCE      : str  (optional — source context, e.g. "production-cluster")
+        FORTSIGNAL_SOURCE      : str  (source environment, e.g. "production-cluster")
         FORTSIGNAL_LOG_LEVEL   : str  (default: "WARNING")
     """
 
@@ -183,9 +193,8 @@ class FortSignalMiddleware(AgentMiddleware):
         http_client: AsyncClient | None = None,
     ) -> None:
         self.api_key = api_key or os.getenv("FORTSIGNAL_API_KEY", "")
-        self.base_url = (
-            base_url or os.getenv("FORTSIGNAL_BASE_URL", "https://api.fortsignal.com")
-        ).rstrip("/")
+        env_base = os.getenv("FORTSIGNAL_BASE_URL")
+        self.base_url = (base_url or env_base or "https://api.fortsignal.com").rstrip("/")
         self.user_id = user_id or os.getenv("FORTSIGNAL_USER_ID", "")
         self.agent_id = agent_id or os.getenv("FORTSIGNAL_AGENT_ID", "")
         self.agent_key_path = agent_key_path or os.getenv("FORTSIGNAL_AGENT_KEY", "")
@@ -208,7 +217,7 @@ class FortSignalMiddleware(AgentMiddleware):
                 base_url=self.base_url,
                 headers={
                     "Authorization": f"Bearer {self.api_key}",
-                    "User-Agent": "fortsignal-deepagents/0.1.0",
+                    "User-Agent": f"fortsignal-deepagents/{_VERSION}",
                 },
                 timeout=30,
             )
@@ -306,6 +315,8 @@ class FortSignalMiddleware(AgentMiddleware):
             },
             **({"source": self.source} if self.source else {}),
         }
+        if self.source:
+            challenge_payload["source"] = self.source
         if use_agent:
             challenge_payload["agentId"] = self.agent_id
         else:
@@ -555,6 +566,9 @@ class FortSignalMiddleware(AgentMiddleware):
             tool_name, signal_id,
         )
 
+        # Clean up pending state
+        self._pending.pop(tool_call_id, None)
+
         # Execute the tool via request.override (preserves original args)
         clean_request = request.override(
             tool_call={
@@ -572,7 +586,7 @@ def _extract_error_detail(exc: HTTPStatusError) -> str:
     """Pull a human-readable error message from an HTTP error response."""
     try:
         body = exc.response.json()
-        return str(body.get("detail") or body.get("error") or body.get("message") or body)
+        return str(body.get("detail") or body.get("error") or body.get("message") or body.get("reason") or body)
     except Exception:
         return exc.response.text[:500]
 

@@ -109,9 +109,11 @@ def main() -> None:
 
     def _secured_create(*p_args, **p_kwargs):
         middleware = list(p_kwargs.pop("middleware", ()))
+        fortsignal_source = os.getenv("FORTSIGNAL_SOURCE", "")
         middleware.insert(0, FortSignalMiddleware(
             user_id=user_id, agent_id=agent_id, agent_key_path=agent_key,
             api_key=api_key, base_url=base_url,
+            source=fortsignal_source or None,
         ))
         return _orig_create(*p_args, middleware=middleware, **p_kwargs)
 

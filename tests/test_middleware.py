@@ -102,7 +102,8 @@ class TestConfig:
         assert mw.api_key == "explicit_key"
         assert mw.user_id == "user_explicit"
 
-    def test_no_api_key(self):
+    def test_no_api_key(self, monkeypatch: MonkeyPatch):
+        monkeypatch.delenv("FORTSIGNAL_API_KEY", raising=False)
         mw = FortSignalMiddleware()
         assert mw.api_key == ""
         assert mw.user_id == ""
@@ -119,6 +120,9 @@ class TestRiskyTools:
 
     def test_contains_execute(self):
         assert "execute" in RISKY_TOOLS
+
+    def test_contains_eval(self):
+        assert "eval" in RISKY_TOOLS
 
     def test_contains_task(self):
         assert "task" in RISKY_TOOLS
@@ -152,7 +156,8 @@ class TestSafeToolPassthrough:
 class TestMissingConfig:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("risky_tool", sorted(RISKY_TOOLS))
-    async def test_blocks_without_api_key(self, risky_tool):
+    async def test_blocks_without_api_key(self, risky_tool, monkeypatch: MonkeyPatch):
+        monkeypatch.delenv("FORTSIGNAL_API_KEY", raising=False)
         mw = FortSignalMiddleware(user_id="user_1")  # no API key
         request = _make_tool_call_request(risky_tool)
 
@@ -163,7 +168,9 @@ class TestMissingConfig:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("risky_tool", sorted(RISKY_TOOLS))
-    async def test_blocks_without_user_id(self, risky_tool):
+    async def test_blocks_without_user_id(self, risky_tool, monkeypatch: MonkeyPatch):
+        monkeypatch.delenv("FORTSIGNAL_AGENT_ID", raising=False)
+        monkeypatch.delenv("FORTSIGNAL_AGENT_KEY", raising=False)
         mw = FortSignalMiddleware(api_key="test_key")  # no user_id
         request = _make_tool_call_request(risky_tool)
 
@@ -173,7 +180,8 @@ class TestMissingConfig:
         assert "FORTSIGNAL_USER_ID" in result.content
 
     @pytest.mark.asyncio
-    async def test_blocks_without_either(self):
+    async def test_blocks_without_either(self, monkeypatch: MonkeyPatch):
+        monkeypatch.delenv("FORTSIGNAL_API_KEY", raising=False)
         mw = FortSignalMiddleware()
         request = _make_tool_call_request("write_file")
 
@@ -183,8 +191,10 @@ class TestMissingConfig:
         assert "FORTSIGNAL_API_KEY" in result.content
 
     @pytest.mark.asyncio
-    async def test_blocks_without_user_id_or_agent(self):
+    async def test_blocks_without_user_id_or_agent(self, monkeypatch: MonkeyPatch):
         """With api_key set but no user_id or agent config, should error."""
+        monkeypatch.delenv("FORTSIGNAL_AGENT_ID", raising=False)
+        monkeypatch.delenv("FORTSIGNAL_AGENT_KEY", raising=False)
         mw = FortSignalMiddleware(api_key="test_key")
         request = _make_tool_call_request("write_file")
 
@@ -197,7 +207,19 @@ class TestMissingConfig:
 # ── awrap_tool_call: challenge start flow ───────────────────────────────
 
 class TestChallengeStart:
-    """Tests for the /challenge/start initiation phase."""
+    """Tests for the /challenge/start initiation phase with agent mode."""
+
+    @pytest.fixture
+    def agent_key_file(self, tmp_path):
+        """Create a temporary agent key file."""
+        import base64, json
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        key = Ed25519PrivateKey.generate()
+        priv_bytes = key.private_bytes_raw()
+        priv_b64 = base64.urlsafe_b64encode(priv_bytes).rstrip(b"=").decode()
+        path = tmp_path / "agent_key.json"
+        path.write_text(json.dumps({"privateKey": priv_b64}))
+        return str(path)
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -205,43 +227,44 @@ class TestChallengeStart:
         [
             ("write_file", {"file_path": "/tmp/test.txt"}, "/tmp/test.txt"),
             ("edit_file", {"file_path": "/tmp/test.txt"}, "/tmp/test.txt"),
-            ("execute", {"command": "ls -la"}, "ls -la"),
+            ("execute", {"command": "ls -la"}, "cmd:ls -la"),
         ],
     )
-    async def test_returns_webauthn_options_on_success(self, risky_tool, tool_args, expected_recipient):
-        mw = FortSignalMiddleware(api_key="test_key", user_id="user_1")
+    async def test_sends_correct_payload(self, risky_tool, tool_args, expected_recipient, agent_key_file):
+        """Agent mode sends agentId and correct action/recipient to /challenge/start."""
+        mw = FortSignalMiddleware(api_key="test_key", agent_id="test-agent", agent_key_path=agent_key_file)
         _install_mock_client(mw)
-        webauthn_resp = {
-            "challenge": "base64url_challenge...",
-            "timeout": 60000,
-            "rpId": "api.fortsignal.com",
-            "allowCredentials": [{"type": "public-key"}],
-        }
-        mw._client.post.return_value = _mock_post_response(200, webauthn_resp)
+
+        from httpx import Request, Response
+        start_resp = MagicMock(spec=Response)
+        start_resp.status_code = 200
+        start_resp.headers = {}
+        start_resp.json.return_value = {"challenge": "dGVzdC1jaGFsbGVuZ2U"}
+        verify_resp = MagicMock(spec=Response)
+        verify_resp.status_code = 200
+        verify_resp.headers = {}
+        verify_resp.json.return_value = {"decision": "allow"}
+        mw._client.post.side_effect = [start_resp, verify_resp]
 
         request = _make_tool_call_request(risky_tool, tool_args)
         result = await mw.awrap_tool_call(request, _fake_handler)
 
-        assert result.status == "error"
-        payload = json.loads(result.content)
-        assert payload["action"] == "fortsignal_challenge_required"
-        assert payload["tool"] == risky_tool
-        assert payload["verification_type"] == "passkey"
-        assert payload["webauthn_options"] == webauthn_resp
+        assert result.status == "success"
 
         # Verify the sent payload
-        sent_json = mw._client.post.call_args[1]["json"]
-        assert sent_json["userId"] == "user_1"
+        sent_json = mw._client.post.call_args_list[0][1]["json"]
+        assert sent_json["agentId"] == "test-agent"
+        assert "userId" not in sent_json
         assert sent_json["action"] == risky_tool
         assert sent_json["recipient"] == expected_recipient
         assert sent_json["metadata"]["tool"] == risky_tool
 
-        # Verify pending challenge stored
-        assert f"call_{risky_tool}_123" in mw._pending
+        # Verify pending challenge stored during start, cleaned up on success
+        assert f"call_{risky_tool}_123" not in mw._pending
 
     @pytest.mark.asyncio
-    async def test_handles_api_error(self):
-        mw = FortSignalMiddleware(api_key="test_key", user_id="user_1")
+    async def test_handles_api_error(self, agent_key_file):
+        mw = FortSignalMiddleware(api_key="test_key", agent_id="test-agent", agent_key_path=agent_key_file)
         _install_mock_client(mw)
         from httpx import HTTPStatusError, Request, Response
         response = Response(status_code=403, json={"error": "Invalid API key"})
@@ -257,8 +280,8 @@ class TestChallengeStart:
         assert "Invalid API key" in result.content
 
     @pytest.mark.asyncio
-    async def test_handles_network_error(self):
-        mw = FortSignalMiddleware(api_key="test_key", user_id="user_1")
+    async def test_handles_network_error(self, agent_key_file):
+        mw = FortSignalMiddleware(api_key="test_key", agent_id="test-agent", agent_key_path=agent_key_file)
         _install_mock_client(mw)
         from httpx import ConnectError
         mw._client.post.side_effect = ConnectError("connection refused")
@@ -273,42 +296,86 @@ class TestChallengeStart:
 # ── awrap_tool_call: action/recipient mapping ───────────────────────────
 
 class TestActionMapping:
+    """Tests for action/recipient mapping in agent mode."""
+
+    @pytest.fixture
+    def agent_kw(self, tmp_path):
+        """Return kwargs and a mock handler chain for agent mode tests."""
+        import base64, json
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        key = Ed25519PrivateKey.generate()
+        priv_bytes = key.private_bytes_raw()
+        priv_b64 = base64.urlsafe_b64encode(priv_bytes).rstrip(b"=").decode()
+        path = tmp_path / "agent_key.json"
+        path.write_text(json.dumps({"privateKey": priv_b64}))
+        return {"agent_id": "test-agent", "agent_key_path": str(path)}
+
     @pytest.mark.asyncio
-    async def test_write_file_sends_file_path_as_recipient(self):
-        mw = FortSignalMiddleware(api_key="test_key", user_id="user_1")
+    async def test_write_file_sends_file_path_as_recipient(self, agent_kw):
+        mw = FortSignalMiddleware(api_key="test_key", **agent_kw)
         _install_mock_client(mw)
-        mw._client.post.return_value = _mock_post_response(200, {"challenge": "abc"})
+
+        from httpx import Request, Response
+        start_resp = MagicMock(spec=Response)
+        start_resp.status_code = 200
+        start_resp.headers = {}
+        start_resp.json.return_value = {"challenge": "dGVzdA"}
+        verify_resp = MagicMock(spec=Response)
+        verify_resp.status_code = 200
+        verify_resp.headers = {}
+        verify_resp.json.return_value = {"decision": "allow"}
+        mw._client.post.side_effect = [start_resp, verify_resp]
 
         request = _make_tool_call_request("write_file", {"file_path": "/home/test/main.py", "content": "..."})
         await mw.awrap_tool_call(request, _fake_handler)
 
-        sent = mw._client.post.call_args[1]["json"]
+        sent = mw._client.post.call_args_list[0][1]["json"]
         assert sent["recipient"] == "/home/test/main.py"
         assert sent["action"] == "write_file"
 
     @pytest.mark.asyncio
-    async def test_execute_sends_command_as_recipient(self):
-        mw = FortSignalMiddleware(api_key="test_key", user_id="user_1")
+    async def test_execute_sends_command_as_recipient(self, agent_kw):
+        mw = FortSignalMiddleware(api_key="test_key", **agent_kw)
         _install_mock_client(mw)
-        mw._client.post.return_value = _mock_post_response(200, {"challenge": "abc"})
+
+        from httpx import Request, Response
+        start_resp = MagicMock(spec=Response)
+        start_resp.status_code = 200
+        start_resp.headers = {}
+        start_resp.json.return_value = {"challenge": "dGVzdA"}
+        verify_resp = MagicMock(spec=Response)
+        verify_resp.status_code = 200
+        verify_resp.headers = {}
+        verify_resp.json.return_value = {"decision": "allow"}
+        mw._client.post.side_effect = [start_resp, verify_resp]
 
         request = _make_tool_call_request("execute", {"command": "rm -rf /data"})
         await mw.awrap_tool_call(request, _fake_handler)
 
-        sent = mw._client.post.call_args[1]["json"]
-        assert sent["recipient"] == "rm -rf /data"
+        sent = mw._client.post.call_args_list[0][1]["json"]
+        assert sent["recipient"] == "cmd:rm -rf /data"
 
     @pytest.mark.asyncio
-    async def test_metadata_contains_full_args(self):
-        mw = FortSignalMiddleware(api_key="test_key", user_id="user_1")
+    async def test_metadata_contains_full_args(self, agent_kw):
+        mw = FortSignalMiddleware(api_key="test_key", **agent_kw)
         _install_mock_client(mw)
-        mw._client.post.return_value = _mock_post_response(200, {"challenge": "abc"})
+
+        from httpx import Request, Response
+        start_resp = MagicMock(spec=Response)
+        start_resp.status_code = 200
+        start_resp.headers = {}
+        start_resp.json.return_value = {"challenge": "dGVzdA"}
+        verify_resp = MagicMock(spec=Response)
+        verify_resp.status_code = 200
+        verify_resp.headers = {}
+        verify_resp.json.return_value = {"decision": "allow"}
+        mw._client.post.side_effect = [start_resp, verify_resp]
 
         args = {"file_path": "/tmp/x.txt", "content": "hello"}
         request = _make_tool_call_request("write_file", args)
         await mw.awrap_tool_call(request, _fake_handler)
 
-        sent = mw._client.post.call_args[1]["json"]
+        sent = mw._client.post.call_args_list[0][1]["json"]
         assert sent["metadata"]["tool"] == "write_file"
         assert sent["metadata"]["args"] == args
 
@@ -503,7 +570,8 @@ class TestModelCall:
         assert request.system_message is not None
 
     @pytest.mark.asyncio
-    async def test_no_injection_when_key_not_set(self):
+    async def test_no_injection_when_key_not_set(self, monkeypatch: MonkeyPatch):
+        monkeypatch.delenv("FORTSIGNAL_API_KEY", raising=False)
         mw = FortSignalMiddleware()
 
         request = MagicMock()
@@ -520,45 +588,87 @@ class TestModelCall:
 # ── Edge cases ──────────────────────────────────────────────────────────
 
 class TestEdgeCases:
+    """Edge case tests in agent mode."""
+
+    @pytest.fixture
+    def agent_kw(self, tmp_path):
+        import base64, json
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        key = Ed25519PrivateKey.generate()
+        priv_bytes = key.private_bytes_raw()
+        priv_b64 = base64.urlsafe_b64encode(priv_bytes).rstrip(b"=").decode()
+        path = tmp_path / "agent_key.json"
+        path.write_text(json.dumps({"privateKey": priv_b64}))
+        return {"agent_id": "test-agent", "agent_key_path": str(path)}
+
     @pytest.mark.asyncio
-    async def test_concurrent_different_tools(self):
-        mw = FortSignalMiddleware(api_key="test_key", user_id="user_1")
+    async def test_concurrent_different_tools(self, agent_kw):
+        mw = FortSignalMiddleware(api_key="test_key", **agent_kw)
         _install_mock_client(mw)
 
-        # First challenge
-        mw._client.post.return_value = _mock_post_response(200, {"challenge": "abc"})
+        from httpx import Request, Response
+
+        # First call: write_file
+        s1 = MagicMock(spec=Response)
+        s1.status_code = 200; s1.headers = {}; s1.json.return_value = {"challenge": "dGVzdA"}
+        v1 = MagicMock(spec=Response)
+        v1.status_code = 200; v1.headers = {}; v1.json.return_value = {"decision": "allow"}
+        mw._client.post.side_effect = [s1, v1]
+
         req_a = _make_tool_call_request("write_file", {"file_path": "/a.txt"})
         result_a = await mw.awrap_tool_call(req_a, _fake_handler)
-        assert json.loads(result_a.content)["action"] == "fortsignal_challenge_required"
+        assert result_a.status == "success"
 
-        # Second challenge
+        # Second challenge: execute
         mw._client.post.reset_mock()
-        mw._client.post.return_value = _mock_post_response(200, {"challenge": "def"})
+        s2 = MagicMock(spec=Response)
+        s2.status_code = 200; s2.headers = {}; s2.json.return_value = {"challenge": "dGVzdA"}
+        v2 = MagicMock(spec=Response)
+        v2.status_code = 200; v2.headers = {}; v2.json.return_value = {"decision": "allow"}
+        mw._client.post.side_effect = [s2, v2]
+
         req_b = _make_tool_call_request("execute", {"command": "test"})
         result_b = await mw.awrap_tool_call(req_b, _fake_handler)
-        assert json.loads(result_b.content)["action"] == "fortsignal_challenge_required"
+        assert result_b.status == "success"
 
-        assert len(mw._pending) == 2
+        # Both pending entries should be cleaned up after verify
+        assert len(mw._pending) == 0
 
     @pytest.mark.asyncio
-    async def test_no_args_tool_call(self):
-        mw = FortSignalMiddleware(api_key="test_key", user_id="user_1")
+    async def test_no_args_tool_call(self, agent_kw):
+        mw = FortSignalMiddleware(api_key="test_key", **agent_kw)
         _install_mock_client(mw)
-        mw._client.post.return_value = _mock_post_response(200, {"challenge": "abc"})
+
+        from httpx import Request, Response
+        s = MagicMock(spec=Response)
+        s.status_code = 200; s.headers = {}; s.json.return_value = {"challenge": "dGVzdA"}
+        v = MagicMock(spec=Response)
+        v.status_code = 200; v.headers = {}; v.json.return_value = {"decision": "allow"}
+        mw._client.post.side_effect = [s, v]
 
         request = _make_tool_call_request("write_todos", None)
         result = await mw.awrap_tool_call(request, _fake_handler)
 
-        payload = json.loads(result.content)
-        assert payload["action"] == "fortsignal_challenge_required"
+        assert result.status == "success"
 
 
 # ── Retry logic ─────────────────────────────────────────────────────────
 
 class TestRetryLogic:
+    @pytest.fixture
+    def agent_kw(self, tmp_path):
+        import base64, json
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        key = Ed25519PrivateKey.generate()
+        priv_bytes = key.private_bytes_raw()
+        priv_b64 = base64.urlsafe_b64encode(priv_bytes).rstrip(b"=").decode()
+        path = tmp_path / "agent_key.json"
+        path.write_text(json.dumps({"privateKey": priv_b64}))
+        return {"agent_id": "test-agent", "agent_key_path": str(path)}
+
     @pytest.mark.asyncio
-    async def test_retry_on_429_then_succeeds(self):
-        mw = FortSignalMiddleware(api_key="test_key", user_id="user_1")
+    async def test_retry_on_429_then_succeeds(self, agent_kw):
+        mw = FortSignalMiddleware(api_key="test_key", **agent_kw)
         client = _install_mock_client(mw)
 
         from httpx import HTTPStatusError, Request, Response
@@ -575,25 +685,29 @@ class TestRetryLogic:
             )
             return resp
 
-        def _resp_200():
+        def _resp_200(data=None):
             resp = MagicMock(spec=Response)
             resp.status_code = 200
             resp.headers = {}
-            resp.json.return_value = {"challenge": "abc"}
+            resp.json.return_value = data or {}
             return resp
 
-        client.post.side_effect = [_resp_429(), _resp_200()]
+        # /challenge/start: 429 then 200; /challenge/verify: 200 "allow"
+        client.post.side_effect = [
+            _resp_429(),
+            _resp_200({"challenge": "dGVzdA"}),
+            _resp_200({"decision": "allow"}),
+        ]
 
         request = _make_tool_call_request("write_file", {"file_path": "/test.txt"})
         result = await mw.awrap_tool_call(request, _fake_handler)
 
-        payload = json.loads(result.content)
-        assert payload["action"] == "fortsignal_challenge_required"
-        assert client.post.call_count == 2
+        assert result.status == "success"
+        assert client.post.call_count == 3
 
     @pytest.mark.asyncio
-    async def test_all_429_returns_error(self):
-        mw = FortSignalMiddleware(api_key="test_key", user_id="user_1")
+    async def test_all_429_returns_error(self, agent_kw):
+        mw = FortSignalMiddleware(api_key="test_key", **agent_kw)
         client = _install_mock_client(mw)
 
         from httpx import HTTPStatusError, Request, Response

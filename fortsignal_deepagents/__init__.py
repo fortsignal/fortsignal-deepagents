@@ -29,14 +29,18 @@ Or use the helper:
 
 from fortsignal_deepagents.middleware import FortSignalMiddleware, RISKY_TOOLS, _PendingChallenge
 
+try:
+    from importlib.metadata import version as _version
+    __version__ = _version("fortsignal-deepagents")
+except Exception:
+    __version__ = "0.0.0"
+
 __all__ = [
     "FortSignalMiddleware",
     "RISKY_TOOLS",
     "_PendingChallenge",
     "create_fortsignal_deep_agent",
 ]
-
-__version__ = "0.1.0"
 
 
 def create_fortsignal_deep_agent(
@@ -47,6 +51,7 @@ def create_fortsignal_deep_agent(
     user_id: str | None = None,
     agent_id: str | None = None,
     agent_key_path: str | None = None,
+    source: str | None = None,
     **kwargs,
 ):
     """Create a Deep Agent protected by FortSignal middleware.
@@ -62,6 +67,7 @@ def create_fortsignal_deep_agent(
         user_id: FortSignal user ID for passkey mode.
         agent_id: FortSignal agent ID for autonomous mode.
         agent_key_path: Path to Ed25519 agent key JSON file.
+        source: Source context for policy evaluation (default: ``$FORTSIGNAL_SOURCE``).
         **kwargs: Forwarded to ``create_deep_agent()``.
 
     Returns:
@@ -72,7 +78,7 @@ def create_fortsignal_deep_agent(
     middleware = kwargs.pop("middleware", [])
     fortsignal = FortSignalMiddleware(
         user_id=user_id, agent_id=agent_id, agent_key_path=agent_key_path,
-        api_key=api_key, base_url=base_url,
+        api_key=api_key, base_url=base_url, source=source,
     )
     secured_middleware = [fortsignal, *list(middleware)]
 
