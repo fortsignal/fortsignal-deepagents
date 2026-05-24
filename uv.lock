@@ -486,7 +486,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/e6/79/d4f20e91327c98096
 
 [[package]]
 name = "fortsignal-deepagents"
-version = "0.1.7"
+version = "0.1.10"
 source = { virtual = "." }
 dependencies = [
     { name = "deepagents" },

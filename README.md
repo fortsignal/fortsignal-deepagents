@@ -162,7 +162,7 @@ Full detail → [api.fortsignal.com/docs](https://api.fortsignal.com/docs)
 
 ## Tests
 
-**66 tests** — all mock (middleware logic), no API key required.
+**67 tests** — all mock (middleware logic), no API key required.
 
 Mock tests run offline and cover config, safe-tool passthrough, risky-tool
 interception, challenge/verify flow (agent + passkey modes), retry logic,
