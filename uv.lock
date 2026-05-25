@@ -411,8 +411,8 @@ wheels = [
 ]
 
 [[package]]
-name = "deepagents-cli"
-version = "0.0.59"
+name = "deepagents-code"
+version = "0.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiosqlite" },
@@ -446,9 +446,9 @@ dependencies = [
     { name = "tomli-w" },
     { name = "uuid-utils" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1c/45/a57d99fa3d87f7223d7b28edd5817e8b12e2c9094d544247f3383c1fa495/deepagents_cli-0.0.59.tar.gz", hash = "sha256:ac0703183f4d6f5efa0fd2c76f73427e7275c0b670d4707e06f7efadfb98d735", size = 1950454, upload-time = "2026-05-12T19:09:21.231Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/e6/ab3653600d12d44cb9c32c8c31df8dda781111fcc819c4f95fdb89256427/deepagents_code-0.1.1.tar.gz", hash = "sha256:e28a27a0bbc06e6e21c13eda9778befe97c75008c31623ed6608b85f60c97b4a", size = 1439237, upload-time = "2026-05-16T00:16:51.019Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/96/f4/7b996961c858c845efa212f106a98e6f58efc0b6c539689d44bb8243ab19/deepagents_cli-0.0.59-py3-none-any.whl", hash = "sha256:3d5d73cc0b3b2cf20f18d9ca645dc79f8d2b953d569a9e427df8132b375997f8", size = 991493, upload-time = "2026-05-12T19:09:19.604Z" },
+    { url = "https://files.pythonhosted.org/packages/23/ba/01d730db4e408e4cecf5b86c0f7fddf68ee1e479238c497fbe43d361ee14/deepagents_code-0.1.1-py3-none-any.whl", hash = "sha256:442faecbe2a4e538e29aec322628c2b409f2b653790d4956903ef399c2768a73", size = 586103, upload-time = "2026-05-16T00:16:49.507Z" },
 ]
 
 [[package]]
@@ -486,11 +486,11 @@ sdist = { url = "https://files.pythonhosted.org/packages/e6/79/d4f20e91327c98096
 
 [[package]]
 name = "fortsignal-deepagents"
-version = "0.1.7"
+version = "0.1.10"
 source = { virtual = "." }
 dependencies = [
     { name = "deepagents" },
-    { name = "deepagents-cli" },
+    { name = "deepagents-code" },
     { name = "httpx" },
     { name = "langchain-deepseek" },
     { name = "langchain-openai" },
@@ -506,7 +506,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "deepagents", specifier = ">=0.6.0" },
-    { name = "deepagents-cli", specifier = ">=0.0.51" },
+    { name = "deepagents-code", specifier = ">=0.0.4" },
     { name = "httpx" },
     { name = "langchain-deepseek", specifier = ">=1.0.1" },
     { name = "langchain-openai", specifier = ">=1.2.1" },
