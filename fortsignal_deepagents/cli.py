@@ -4,10 +4,12 @@ Usage:
     export FORTSIGNAL_API_KEY=fs_key_...
     fortsignal-deepagents [--model MODEL] [--message MSG]
 
-This is a thin wrapper around the standard ``deepagents`` CLI. It patches
-``create_deep_agent`` to inject ``FortSignalMiddleware`` before handing
-control to the real CLI loop.
+This wraps ``deepagents-code`` and injects ``FortSignalMiddleware`` into
+both the parent process (direct agent creation) and the child LangGraph
+server subprocess (interactive TUI).
 """
+
+from __future__ import annotations
 
 import argparse
 import os
@@ -16,8 +18,6 @@ import warnings
 
 # Suppress noisy deprecation warnings from langchain_core
 warnings.filterwarnings("ignore", module="langchain_core._api.deprecation")
-
-DEEPAGENTS_ENTRY = "deepagents"
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -78,6 +78,37 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _inject_hook_into_server_graph(work_dir: str, **mw_kwargs: str | None) -> None:
+    """Append middleware-injection code to the subprocess's server_graph.py."""
+    sg_path = os.path.join(work_dir, "server_graph.py")
+    if not os.path.isfile(sg_path):
+        return
+
+    uid = mw_kwargs.get("user_id")
+    aid = mw_kwargs.get("agent_id")
+    akp = mw_kwargs.get("agent_key_path")
+    apk = mw_kwargs.get("api_key")
+    bur = mw_kwargs.get("base_url")
+
+    with open(sg_path, "a") as f:
+        f.write(f"""
+import os as _fs_os
+if _fs_os.environ.get("FORTSIGNAL_API_KEY"):
+    import deepagents_code.agent as _fs_a
+    from fortsignal_deepagents import FortSignalMiddleware
+    _fs_o = _fs_a.create_cli_agent
+    def _fs_s(*_a, **_kw):
+        _kw["middleware"] = [FortSignalMiddleware(
+            user_id={uid!r}, agent_id={aid!r},
+            agent_key_path={akp!r}, api_key={apk!r},
+            base_url={bur!r},
+            source=_fs_os.environ.get("FORTSIGNAL_SOURCE") or None,
+        )] + list(_kw.pop("middleware", ()))
+        return _fs_o(*_a, **_kw)
+    _fs_a.create_cli_agent = _fs_s
+""")
+
+
 def main() -> None:
     """Main entry point for the FortSignal Deep Agents CLI."""
 
@@ -98,53 +129,61 @@ def main() -> None:
 
     base_url = args.base_url or os.getenv("FORTSIGNAL_BASE_URL")
 
-    # ── Patch create_deep_agent before deepagents CLI loads ──────────────
-    from fortsignal_deepagents import FortSignalMiddleware
-
-    # We monkey-patch at TWO levels so the CLI picks it up regardless of
-    # which import path resolves at runtime:
-    #   1. deepagents.graph          — canonical definition
-    #   2. deepagents                — re-exported in __init__.py
+    # ── Inject FortSignalMiddleware ──────────────────────────────────────
+    # The server spawns a child subprocess (langgraph dev) that imports
+    # fresh, so parent-process monkey-patches don't reach it.  We patch
+    # both paths:
     #
-    # Both are separate module-level references bound at import time, so
-    # patching one does NOT affect the other.
+    #   1. Parent process: replace create_cli_agent in the agent module.
+    #   2. Child subprocess: hook _scaffold_workspace to append injection
+    #      code into the server_graph.py that gets copied to the work dir.
+    if api_key and (user_id or agent_id or agent_key):
+        from fortsignal_deepagents import FortSignalMiddleware
 
-    import deepagents.graph as _graph_mod
-    import deepagents as _deepagents_mod
+        # ── Parent process ───────────────────────────────────────────────
+        import deepagents_code.agent as _agent_mod
 
-    _orig_create = _graph_mod.create_deep_agent
+        _orig_create = _agent_mod.create_cli_agent
+        _fs_source = os.getenv("FORTSIGNAL_SOURCE", "")
 
-    def _secured_create(*p_args, **p_kwargs):
-        middleware = list(p_kwargs.pop("middleware", ()))
-        fortsignal_source = os.getenv("FORTSIGNAL_SOURCE", "")
-        middleware.insert(0, FortSignalMiddleware(
-            user_id=user_id, agent_id=agent_id, agent_key_path=agent_key,
-            api_key=api_key, base_url=base_url,
-            source=fortsignal_source or None,
-        ))
-        return _orig_create(*p_args, middleware=middleware, **p_kwargs)
+        def _secured_create(*pa, **kw):
+            mw = list(kw.pop("middleware", ()))
+            mw.insert(0, FortSignalMiddleware(
+                user_id=user_id, agent_id=agent_id, agent_key_path=agent_key,
+                api_key=api_key, base_url=base_url,
+                source=_fs_source or None,
+            ))
+            return _orig_create(*pa, middleware=mw, **kw)
 
-    _graph_mod.create_deep_agent = _secured_create
-    _deepagents_mod.create_deep_agent = _secured_create
+        _agent_mod.create_cli_agent = _secured_create
 
-    # ── Delegate to deepagents CLI ───────────────────────────────────────
-    # The deepagents CLI uses runpy or direct invocation. We simply import
-    # and run its main function.
+        # ── Child subprocess ─────────────────────────────────────────────
+        import deepagents_code.server_manager as _sm
+
+        _orig_scaffold = _sm._scaffold_workspace
+
+        def _patched_scaffold(work_dir):
+            _orig_scaffold(work_dir)
+            _inject_hook_into_server_graph(
+                work_dir,
+                user_id=user_id, agent_id=agent_id,
+                agent_key_path=agent_key, api_key=api_key,
+                base_url=base_url,
+            )
+
+        _sm._scaffold_workspace = _patched_scaffold
+
+    # ── Delegate to deepagents-code CLI ──────────────────────────────────
     try:
-        from deepagents_cli.main import cli_main as deepagents_main  # type: ignore[import-untyped]
+        from deepagents_code.main import cli_main as deepagents_main
     except ImportError:
-        # Fallback: try running via python -m
         msg = (
-            "The deepagents CLI package is required. Install it with:\n"
-            "    uv tool install deepagents-cli\n"
-            "or:\n"
-            "    pip install deepagents-cli\n"
+            "The deepagents-code package is required. Install it with:\n"
+            "    pip install deepagents-code\n"
         )
         print(msg, file=sys.stderr)
         sys.exit(1)
 
-    # Build forwarded args — pass through model, message, user-id, agent-id,
-    # agent-key, agent, skill, startup-cmd if explicitly provided
     forwarded = []
     for fflag, fval in (
         ("--model", args.model),
@@ -159,9 +198,11 @@ def main() -> None:
         if fval is not None:
             forwarded.append(fflag)
             forwarded.append(fval)
+    forwarded.extend(remaining_args)
 
-    sys.argv = [sys.argv[0], *forwarded, *remaining_args]
-    sys.exit(deepagents_main())
+    sys.argv = [sys.argv[0], *forwarded]
+    deepagents_main()
+    # unreachable — deepagents_main calls sys.exit()
 
 
 if __name__ == "__main__":
