@@ -20,7 +20,8 @@ Every risky operation (file write, edit, execute, sub-task) is intercepted and r
 
 1. **API key** — Sign up at [fortsignal.com/signup](https://fortsignal.com/signup) → Dashboard → **API Keys**. Your key starts with `fs_live_`.
 2. **Register your agent** — In the [dashboard](https://www.fortsignal.com/login), create an agent and generate an Ed25519 keypair. Download the private key as `agent-key.json`.
-3. **Approve a delegation** — In the [dashboard](https://www.fortsignal.com/login), approve a delegation with your passkey. Agent calls return `delegation_invalid` until this is done.
+3. **Create a policy** — In the dashboard, create a policy defining what the agent may do (see [Policy Setup](#policy-setup) for a coding-agent example). You select this policy when delegating in step 4.
+4. **Approve a delegation** — In the [dashboard](https://www.fortsignal.com/login), approve a delegation with your passkey. Agent calls return `delegation_invalid` until this is done.
 
 ---
 
@@ -179,7 +180,12 @@ uv run pytest tests/ -v
 ### Policy Setup
 
 After creating an Agent Passport, create a policy in the FortSignal dashboard
-to define what the agent can do. Example for a coding agent:
+to define what the agent can do. **Two rules to know:** leave *Allowed actions*
+empty and every action is permitted — list any and only those pass. Same for
+recipients: empty means any target, listed patterns gate each call. A tool call
+that doesn't match the policy is denied and never executes.
+
+Example for a coding agent:
 
 | Setting | Value |
 |---------|-------|
