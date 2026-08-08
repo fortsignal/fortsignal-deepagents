@@ -62,6 +62,12 @@ RISKY_TOOLS = frozenset({
 # Max retries for rate-limited (429) HTTP requests.
 _MAX_RETRIES = 3
 
+# Tool-arg fields whose values are routinely large (file bodies, edit strings).
+# These are replaced with a length placeholder in challenge metadata — the
+# recipient already captures the target, and the full content would blow the
+# server's 2048-char metadata limit.
+_LARGE_METADATA_FIELDS = frozenset({"content", "new_string", "old_string", "text"})
+
 
 # ---------------------------------------------------------------------------
 # Retry helper for transient HTTP errors
@@ -304,6 +310,10 @@ class FortSignalMiddleware(AgentMiddleware):
         # ── Step 1: Build action model and POST to /challenge/start ──
         action = _tool_to_action(tool_name, tool_args)
         recipient = _tool_to_recipient(tool_name, tool_args)
+        meta_args = {
+            k: (f"<{len(str(v))} chars>" if k in _LARGE_METADATA_FIELDS else v)
+            for k, v in tool_args.items()
+        }
 
         challenge_payload: dict[str, Any] = {
             "action": action,
@@ -311,7 +321,7 @@ class FortSignalMiddleware(AgentMiddleware):
             "metadata": {
                 "tool": tool_name,
                 "tool_call_id": tool_call_id,
-                "args": tool_args,
+                "args": meta_args,
             },
             **({"source": self.source} if self.source else {}),
         }
@@ -465,7 +475,7 @@ class FortSignalMiddleware(AgentMiddleware):
 
         decision = verify_data.get("decision")
         if decision != "allow":
-            reason = verify_data.get("reason", "Challenge was denied")
+            reason = _friendly_reason(verify_data.get("reason", "Challenge was denied"))
             logger.info("Challenge denied for %s: %s", pending.tool_name, reason)
             return ToolMessage(
                 content=f"FortSignal: {reason}",
@@ -475,9 +485,10 @@ class FortSignalMiddleware(AgentMiddleware):
 
         # ── Approved! Execute the real tool ─────────────────────────
         signal_id = verify_data.get("signalId", "unknown")
+        artifact = verify_data.get("artifact")
         logger.info(
-            "Challenge approved for %s (signalId=%s)",
-            pending.tool_name, signal_id,
+            "Challenge approved for %s (signalId=%s, artifact %s)",
+            pending.tool_name, signal_id, _describe_artifact(artifact),
         )
 
         clean_request = request.override(
@@ -486,7 +497,8 @@ class FortSignalMiddleware(AgentMiddleware):
                 "args": pending.args,
             },
         )
-        return await handler(clean_request)
+        result = await handler(clean_request)
+        return _attach_receipt(result, signal_id, artifact)
 
     # ── Auto-sign (agent mode) ──────────────────────────────────────
 
@@ -552,7 +564,7 @@ class FortSignalMiddleware(AgentMiddleware):
 
         decision = verify_data.get("decision")
         if decision != "allow":
-            reason = verify_data.get("reason", "Challenge was denied")
+            reason = _friendly_reason(verify_data.get("reason", "Challenge was denied"))
             logger.info("Challenge denied for %s: %s", tool_name, reason)
             return ToolMessage(
                 content=f"FortSignal: {reason}",
@@ -561,9 +573,10 @@ class FortSignalMiddleware(AgentMiddleware):
             )
 
         signal_id = verify_data.get("signalId", "unknown")
+        artifact = verify_data.get("artifact")
         logger.info(
-            "Challenge approved for %s (signalId=%s, verifiedBy=agent)",
-            tool_name, signal_id,
+            "Challenge approved for %s (signalId=%s, verifiedBy=agent, artifact %s)",
+            tool_name, signal_id, _describe_artifact(artifact),
         )
 
         # Clean up pending state
@@ -576,10 +589,44 @@ class FortSignalMiddleware(AgentMiddleware):
                 "args": tool_args,
             },
         )
-        return await handler(clean_request)
+        result = await handler(clean_request)
+        return _attach_receipt(result, signal_id, artifact)
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────
+
+
+def _friendly_reason(reason: str) -> str:
+    """Translate machine deny reasons into actionable guidance where known."""
+    if reason == "requires_human":
+        return (
+            "requires_human — this action needs human passkey approval; "
+            "rerun in human mode (set FORTSIGNAL_USER_ID instead of "
+            "FORTSIGNAL_AGENT_ID) to approve it"
+        )
+    return reason
+
+
+def _describe_artifact(artifact: str | None) -> str:
+    """Short log-safe description of an execution artifact (never the JWT itself)."""
+    if artifact:
+        return f"(present, {len(artifact)} chars)"
+    return "(absent)"
+
+
+def _attach_receipt(
+    result: ToolMessage | Command[Any],
+    signal_id: str,
+    artifact: str | None,
+) -> ToolMessage | Command[Any]:
+    """Attach the FortSignal receipt (signalId + artifact) to a ToolMessage."""
+    if not isinstance(result, ToolMessage):
+        return result
+    receipt: dict[str, Any] = {"signalId": signal_id}
+    if artifact:
+        receipt["artifact"] = artifact
+    result.additional_kwargs = {**result.additional_kwargs, "fortsignal": receipt}
+    return result
 
 
 def _extract_error_detail(exc: HTTPStatusError) -> str:

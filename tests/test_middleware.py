@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 from pytest import MonkeyPatch
+from langchain_core.messages import ToolMessage
 
 from fortsignal_deepagents import FortSignalMiddleware, RISKY_TOOLS, create_fortsignal_deep_agent
 from fortsignal_deepagents.middleware import _PendingChallenge, _post_with_retry, _parse_retry_after
@@ -48,13 +49,13 @@ def _make_tool_call_request(tool_name: str, args: dict[str, Any] | None = None) 
     })
 
 
-async def _fake_handler(request) -> MagicMock:
+async def _fake_handler(request) -> ToolMessage:
     """Handler that simulates a successful tool execution."""
-    result = MagicMock()
-    result.content = f"executed {request.tool_call['name']}"
-    result.tool_call_id = request.tool_call["id"]
-    result.status = "success"
-    return result
+    return ToolMessage(
+        content=f"executed {request.tool_call['name']}",
+        tool_call_id=request.tool_call["id"],
+        status="success",
+    )
 
 
 def _mock_post_response(status_code: int = 200, json_data: dict | None = None):
@@ -356,7 +357,7 @@ class TestActionMapping:
         assert sent["recipient"] == "cmd:rm -rf /data"
 
     @pytest.mark.asyncio
-    async def test_metadata_contains_full_args(self, agent_kw):
+    async def test_metadata_contains_args(self, agent_kw):
         mw = FortSignalMiddleware(api_key="test_key", **agent_kw)
         _install_mock_client(mw)
 
@@ -377,7 +378,11 @@ class TestActionMapping:
 
         sent = mw._client.post.call_args_list[0][1]["json"]
         assert sent["metadata"]["tool"] == "write_file"
-        assert sent["metadata"]["args"] == args
+        # Large fields are stripped to a length placeholder; the rest pass through
+        assert sent["metadata"]["args"] == {
+            "file_path": "/tmp/x.txt",
+            "content": "<5 chars>",
+        }
 
 
 # ── awrap_tool_call: full challenge/verify flow ─────────────────────────
@@ -494,6 +499,65 @@ class TestChallengeVerify:
         # Handler receives original stored args, not the ones with assertion
         assert original_handler_args["tool_call"]["args"] == {"file_path": "/tmp/test.txt", "content": "hello"}
         assert "_fortsignal_assertion" not in original_handler_args["tool_call"]["args"]
+
+    @pytest.mark.asyncio
+    async def test_verify_allow_attaches_artifact_receipt(self, mw_with_pending):
+        """Allow with an artifact → ToolMessage.additional_kwargs carries the receipt."""
+        mw = mw_with_pending
+        mw._client.post.return_value = _mock_post_response(200, {
+            "decision": "allow",
+            "signalId": "sig_abc",
+            "verifiedBy": "human",
+            "artifact": "eyJhbGciOiJFZERTQSJ9.test-artifact-jwt",
+        })
+
+        request = _make_tool_call_request("write_file", {
+            "_fortsignal_assertion": {"id": "cred_1"},
+        })
+        result = await mw.awrap_tool_call(request, _fake_handler)
+
+        assert result.status == "success"
+        receipt = result.additional_kwargs["fortsignal"]
+        assert receipt["signalId"] == "sig_abc"
+        assert receipt["artifact"] == "eyJhbGciOiJFZERTQSJ9.test-artifact-jwt"
+
+    @pytest.mark.asyncio
+    async def test_verify_allow_without_artifact_omits_key(self, mw_with_pending):
+        """Allow without an artifact → receipt has signalId only, no artifact key."""
+        mw = mw_with_pending
+        mw._client.post.return_value = _mock_post_response(200, {
+            "decision": "allow",
+            "signalId": "sig_noart",
+        })
+
+        request = _make_tool_call_request("write_file", {
+            "_fortsignal_assertion": {"id": "cred_1"},
+        })
+        result = await mw.awrap_tool_call(request, _fake_handler)
+
+        assert result.status == "success"
+        receipt = result.additional_kwargs["fortsignal"]
+        assert receipt["signalId"] == "sig_noart"
+        assert "artifact" not in receipt
+
+    @pytest.mark.asyncio
+    async def test_verify_deny_requires_human_gives_guidance(self, mw_with_pending):
+        """requires_human deny should explain how to approve in human mode."""
+        mw = mw_with_pending
+        mw._client.post.return_value = _mock_post_response(200, {
+            "decision": "deny",
+            "reason": "requires_human",
+        })
+
+        request = _make_tool_call_request("write_file", {
+            "_fortsignal_assertion": {"id": "cred_1"},
+        })
+        result = await mw.awrap_tool_call(request, _fake_handler)
+
+        assert result.status == "error"
+        assert "requires_human" in result.content
+        assert "human passkey approval" in result.content
+        assert "FORTSIGNAL_USER_ID" in result.content
 
     @pytest.mark.asyncio
     async def test_assertion_as_json_string(self, mw_with_pending):
@@ -849,3 +913,111 @@ class TestAgentMode:
 
         assert result.status == "error"
         assert "action_not_allowed" in result.content
+
+    @pytest.mark.asyncio
+    async def test_agent_mode_allow_attaches_artifact_receipt(self, agent_key_file):
+        """Agent-mode allow with an artifact → ToolMessage.additional_kwargs carries it."""
+        mw = FortSignalMiddleware(api_key="test_key", agent_id="test-agent", agent_key_path=agent_key_file)
+        _install_mock_client(mw)
+
+        from httpx import Request, Response
+        start_resp = MagicMock(spec=Response)
+        start_resp.status_code = 200
+        start_resp.headers = {}
+        start_resp.json.return_value = {"challenge": "dGVzdC1jaGFsbGVuZ2U"}
+
+        verify_resp = MagicMock(spec=Response)
+        verify_resp.status_code = 200
+        verify_resp.headers = {}
+        verify_resp.json.return_value = {
+            "decision": "allow",
+            "signalId": "sig_agent_1",
+            "verifiedBy": "agent",
+            "artifact": "eyJhbGciOiJFZERTQSJ9.agent-artifact-jwt",
+        }
+
+        mw._client.post.side_effect = [start_resp, verify_resp]
+
+        request = _make_tool_call_request("write_file", {"file_path": "/tmp/test.txt"})
+        result = await mw.awrap_tool_call(request, _fake_handler)
+
+        assert result.status == "success"
+        receipt = result.additional_kwargs["fortsignal"]
+        assert receipt["signalId"] == "sig_agent_1"
+        assert receipt["artifact"] == "eyJhbGciOiJFZERTQSJ9.agent-artifact-jwt"
+
+    @pytest.mark.asyncio
+    async def test_agent_mode_deny_requires_human_gives_guidance(self, agent_key_file):
+        """Agent-mode requires_human deny should explain how to approve in human mode."""
+        mw = FortSignalMiddleware(api_key="test_key", agent_id="test-agent", agent_key_path=agent_key_file)
+        _install_mock_client(mw)
+
+        from httpx import Request, Response
+        start_resp = MagicMock(spec=Response)
+        start_resp.status_code = 200
+        start_resp.headers = {}
+        start_resp.json.return_value = {"challenge": "dGVzdC1kZW55"}
+
+        verify_resp = MagicMock(spec=Response)
+        verify_resp.status_code = 200
+        verify_resp.headers = {}
+        verify_resp.json.return_value = {
+            "decision": "deny",
+            "reason": "requires_human",
+        }
+
+        mw._client.post.side_effect = [start_resp, verify_resp]
+
+        request = _make_tool_call_request("write_file", {"file_path": "/tmp/test.txt"})
+        result = await mw.awrap_tool_call(request, _fake_handler)
+
+        assert result.status == "error"
+        assert "requires_human" in result.content
+        assert "human passkey approval" in result.content
+        assert "FORTSIGNAL_USER_ID" in result.content
+
+
+# ── Metadata large-field stripping ─────────────────────────────────────────
+
+class TestMetadataStripping:
+    """Large tool-arg fields must not be sent verbatim in challenge metadata."""
+
+    @pytest.fixture
+    def agent_key_file(self, tmp_path):
+        import base64, json
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        key = Ed25519PrivateKey.generate()
+        priv_bytes = key.private_bytes_raw()
+        priv_b64 = base64.urlsafe_b64encode(priv_bytes).rstrip(b"=").decode()
+        path = tmp_path / "agent_key.json"
+        path.write_text(json.dumps({"privateKey": priv_b64}))
+        return str(path)
+
+    @pytest.mark.asyncio
+    async def test_large_content_stripped_from_metadata(self, agent_key_file):
+        """A write_file with a 5000-char content sends a placeholder, not the body."""
+        mw = FortSignalMiddleware(api_key="test_key", agent_id="test-agent", agent_key_path=agent_key_file)
+        _install_mock_client(mw)
+
+        from httpx import Request, Response
+        start_resp = MagicMock(spec=Response)
+        start_resp.status_code = 200
+        start_resp.headers = {}
+        start_resp.json.return_value = {"challenge": "dGVzdA"}
+        verify_resp = MagicMock(spec=Response)
+        verify_resp.status_code = 200
+        verify_resp.headers = {}
+        verify_resp.json.return_value = {"decision": "allow"}
+        mw._client.post.side_effect = [start_resp, verify_resp]
+
+        big_content = "x" * 5000
+        request = _make_tool_call_request("write_file", {
+            "file_path": "/tmp/big.txt",
+            "content": big_content,
+        })
+        await mw.awrap_tool_call(request, _fake_handler)
+
+        sent = mw._client.post.call_args_list[0][1]["json"]
+        assert sent["metadata"]["args"]["content"] == "<5000 chars>"
+        assert sent["metadata"]["args"]["file_path"] == "/tmp/big.txt"
+        assert big_content not in json.dumps(sent["metadata"])
