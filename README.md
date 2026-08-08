@@ -185,6 +185,11 @@ empty and every action is permitted — list any and only those pass. Same for
 recipients: empty means any target, listed patterns gate each call. A tool call
 that doesn't match the policy is denied and never executes.
 
+**Changed a policy later? You must re-delegate** — delegations freeze the
+policy parameters they were approved under. Editing the policy alone won't
+change what an existing delegation allows (dashboard → agent card →
+Re-delegate).
+
 Example for a coding agent:
 
 | Setting | Value |
