@@ -10,12 +10,9 @@ Every risky operation (file write, edit, execute, sub-task) is intercepted and r
 
 ---
 
-## Verifiable Intent Pilot — Now Open
+## Free dev account
 
-Running a small, high-touch pilot for teams building real agents. Natural language policies, cryptographically enforced agent behavior, full audit visibility.
-
-👉 **[Client Guide →](https://docs.google.com/document/u/1/d/e/2PACX-1vTy4idnepjsfJL6xAyvbBC6EhNIG3zdyMgUx5Yx7vDI9A65Hol86qFv9QJb2xXTzlGgAaHvAB8cT390/pub)**  
-Interested? [Contact us](mailto:hr@fortsignal.com) or open an issue.
+500 governed verifications/month, no card. Sign up at [fortsignal.com/signup](https://fortsignal.com/signup) — API key in two minutes, passkey-only.
 
 ---
 
@@ -99,9 +96,15 @@ Register the public key in the dashboard, then approve a delegation before runni
 3. Agent signs with Ed25519 (autonomous) or human signs with passkey (human-in-the-loop)
 4. `/challenge/verify` — only verified intents execute
 
-**Risky tools intercepted:** `write_file`, `edit_file`, `execute`, `task`, `write_todos`
+**Risky tools intercepted:** `write_file`, `edit_file`, `execute`, `eval`, `task`, `write_todos`
 
 **Read-only tools pass through** without any verification check.
+
+---
+
+## Execution artifacts
+
+Every allow from `/challenge/verify` returns an `artifact` — an Ed25519-signed JWT receipt bound to the exact action parameters (action, recipient, amount, source, metadata). Denies never carry one: **absence of an artifact IS the deny.** The middleware attaches `signalId` + `artifact` to every approved tool call's `additional_kwargs["fortsignal"]` — persist it with your run logs; it is cryptographic proof of what was authorized, verifiable offline against FortSignal's public JWKS (`https://api.fortsignal.com/.well-known/fs-keys.json`).
 
 ---
 
@@ -141,6 +144,7 @@ agent = create_deep_agent(model="openai:gpt-4o", middleware=[middleware])
 | `FORTSIGNAL_AGENT_KEY` | Agent mode | Path to `agent-key.json` |
 | `FORTSIGNAL_USER_ID` | Human mode | Your userId for passkey approval |
 | `FORTSIGNAL_BASE_URL` | No | Override API base (default: `https://api.fortsignal.com`) |
+| `FORTSIGNAL_SOURCE` | No | Source context binding for `allowedFromSources` policies (e.g. `production-cluster`) |
 | `FORTSIGNAL_LOG_LEVEL` | No | Log verbosity (default: `WARNING`) |
 
 ---
@@ -162,7 +166,7 @@ Full detail → [api.fortsignal.com/docs](https://api.fortsignal.com/docs)
 
 ## Tests
 
-**66 tests** — all mock (middleware logic), no API key required.
+**73 tests** — all mock (middleware logic), no API key required.
 
 Mock tests run offline and cover config, safe-tool passthrough, risky-tool
 interception, challenge/verify flow (agent + passkey modes), retry logic,
@@ -186,6 +190,14 @@ to define what the agent can do. Example for a coding agent:
 The `cmd:` prefix is added automatically by the middleware to `execute`
 commands so they match the per-action policy overrides. The `task:` prefix
 is added similarly for `task` descriptions.
+
+**Execution budgets and human escalation (optional):**
+
+- `Max actions` (`actionBudget`) — e.g. 50 actions/hour per delegation; over the cap denies with `action_budget_exceeded`
+- `Total amount budget` (`amountBudget`) — cumulative amount cap per fixed window; denies with `amount_budget_exceeded`
+- `Always require human approval` (`requiresHuman`) — listed actions (or `*`) always deny for agents with `requires_human`; the middleware will tell you to rerun in human mode (`FORTSIGNAL_USER_ID`) to approve
+
+**Multi-sig:** delegations can require M-of-N passkey approval (dashboard → Team card to invite co-signers; approval links arrive by email; the agent can't act until the threshold activates the delegation).
 
 ---
 
